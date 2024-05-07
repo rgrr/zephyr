@@ -864,13 +864,13 @@ static int cdc_ncm_send(const struct device *dev, struct net_pkt *const pkt)
 {
     struct cdc_ncm_eth_data *const data = dev->data;
     struct usbd_class_data *c_data = data->c_data;
-    size_t len = net_pkt_get_len(pkt);
+    size_t pkt_len = net_pkt_get_len(pkt);
     struct net_buf *buf;
     union xmit_ntb_t *ntb;
 
-    LOG_DBG("len: %d", len);
+    LOG_DBG("len: %d", pkt_len);
 
-    if (len > sizeof(ntb->data))
+    if (pkt_len > sizeof(ntb->data))     // TODO minus header etc!
     {
         LOG_WRN("Trying to send too large packet, drop");
         return -ENOMEM;
@@ -905,19 +905,23 @@ static int cdc_ncm_send(const struct device *dev, struct net_pkt *const pkt)
     ntb->ndp.wNextNdpIndex = 0;
 
     ntb->ndp_datagram[0].wDatagramIndex  = sys_cpu_to_le16(sys_le16_to_cpu(ntb->nth.wHeaderLength) + sys_le16_to_cpu(ntb->ndp.wLength));
-    ntb->ndp_datagram[0].wDatagramLength = sys_cpu_to_le16(len);
+    ntb->ndp_datagram[0].wDatagramLength = sys_cpu_to_le16(pkt_len);
     ntb->ndp_datagram[1].wDatagramIndex  = 0;
     ntb->ndp_datagram[1].wDatagramLength = 0;
 
-    ntb->nth.wBlockLength = sys_cpu_to_le16(sys_le16_to_cpu(ntb->ndp_datagram[0].wDatagramIndex) + sys_le16_to_cpu(ntb->ndp_datagram[0].wDatagramLength));
+    ntb->nth.wBlockLength = sys_cpu_to_le16(sys_le16_to_cpu(ntb->ndp_datagram[0].wDatagramIndex) + pkt_len);
 
-    if (net_pkt_read(pkt, ntb->data + sys_le16_to_cpu(ntb->ndp_datagram[0].wDatagramIndex), len))
+//    LOG_WRN("%p %d %d %d", ntb, ntb->ndp_datagram[0].wDatagramIndex, pkt_len, sys_le16_to_cpu(ntb->nth.wBlockLength));
+
+    if (net_pkt_read(pkt, ntb->data + sys_le16_to_cpu(ntb->ndp_datagram[0].wDatagramIndex), pkt_len))
     {
         LOG_ERR("Failed copy net_pkt");
         net_buf_unref(buf);
         return -ENOBUFS;
     }
+    // post: now the complete NTB is written.
 
+    // adjust length of net_buf accordingly
     net_buf_add(buf, sys_le16_to_cpu(ntb->nth.wBlockLength));
 
     if (sys_le16_to_cpu(ntb->nth.wBlockLength) % cdc_ncm_get_bulk_in_mps(c_data) == 0)
