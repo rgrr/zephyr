@@ -257,38 +257,6 @@ static struct net_buf *cdc_ncm_buf_alloc(const uint8_t ep)
 
 
 
-/* Retrieve expected pkt size from ethernet/ip header */
-static size_t ncm_eth_size(void *const ncm_pkt, const size_t len)
-{
-	uint8_t *ip_data = (uint8_t *)ncm_pkt + sizeof(struct net_eth_hdr);
-	struct net_eth_hdr *hdr = (void *)ncm_pkt;
-	uint16_t ip_len;
-
-    LOG_DBG("");
-	if (len < NET_IPV6H_LEN + sizeof(struct net_eth_hdr)) {
-		/* Too short */
-		return 0;
-	}
-
-	switch (ntohs(hdr->type)) {
-	case NET_ETH_PTYPE_IP:
-		__fallthrough;
-	case NET_ETH_PTYPE_ARP:
-		ip_len = ntohs(((struct net_ipv4_hdr *)ip_data)->len);
-		break;
-	case NET_ETH_PTYPE_IPV6:
-		ip_len = ntohs(((struct net_ipv6_hdr *)ip_data)->len);
-		break;
-	default:
-		LOG_DBG("Unknown hdr type 0x%04x", hdr->type);
-		return 0;
-	}
-
-	return sizeof(struct net_eth_hdr) + ip_len;
-}   // ncm_eth_size
-
-
-
 static int cdc_ncm_out_start(struct usbd_class_data *const c_data)
 /**
  * Initiate reception
@@ -358,6 +326,8 @@ static int cdc_ncm_acl_out_cb(struct usbd_class_data *const c_data,
     uint16_t start = sys_le16_to_cpu(ndp_datagram[0].wDatagramIndex);
     uint16_t len   = sys_le16_to_cpu(ndp_datagram[0].wDatagramLength);
 
+#if 0
+    // this actually doen't matter for NCM
     /* Linux considers by default that network usb device controllers are
      * not able to handle Zero Length Packet (ZLP) and then generates
      * a short packet containing a null byte. Handle by checking the IP
@@ -372,6 +342,7 @@ static int cdc_ncm_acl_out_cb(struct usbd_class_data *const c_data,
             len--;
         }
     }
+#endif
 
     pkt = net_pkt_rx_alloc_with_buffer(data->iface, len, AF_UNSPEC, 0, K_FOREVER);
     if (pkt == NULL)
@@ -784,7 +755,7 @@ static int cdc_ncm_send(const struct device *dev, struct net_pkt *const pkt)
 
     LOG_DBG("len: %d", len);
 
-    if (len > NET_ETH_MAX_FRAME_SIZE)
+    if (len > sizeof(ntb->data))
     {
         LOG_WRN("Trying to send too large packet, drop");
         return -ENOMEM;
@@ -812,10 +783,10 @@ static int cdc_ncm_send(const struct device *dev, struct net_pkt *const pkt)
     ntb->nth.dwSignature   = sys_cpu_to_le32(NTH16_SIGNATURE);
     ntb->nth.wHeaderLength = sys_cpu_to_le16(sizeof(nth16_t));
     ntb->nth.wSequence     = sys_cpu_to_le16(++data->sequence);
-    ntb->nth.wNdpIndex     = sys_cpu_to_le16(0x0c);
+    ntb->nth.wNdpIndex     = sys_cpu_to_le16(sizeof(nth16_t));
 
     ntb->ndp.dwSignature   = sys_cpu_to_le32(NDP16_SIGNATURE_NCM0);
-    ntb->ndp.wLength       = sys_cpu_to_le16(16);
+    ntb->ndp.wLength       = sys_cpu_to_le16(sizeof(ndp16_t) + (CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB + 1)*sizeof(ndp16_datagram_t));
     ntb->ndp.wNextNdpIndex = 0;
 
     ntb->ndp_datagram[0].wDatagramIndex  = sys_cpu_to_le16(sys_le16_to_cpu(ntb->nth.wHeaderLength) + sys_le16_to_cpu(ntb->ndp.wLength));
@@ -834,9 +805,8 @@ static int cdc_ncm_send(const struct device *dev, struct net_pkt *const pkt)
 
     net_buf_add(buf, sys_le16_to_cpu(ntb->nth.wBlockLength));
 
-    if ( !(buf->len % cdc_ncm_get_bulk_in_mps(c_data)))
+    if (sys_le16_to_cpu(ntb->nth.wBlockLength) % cdc_ncm_get_bulk_in_mps(c_data) == 0)
     {
-        LOG_WRN("xx");
         udc_ep_buf_set_zlp(buf);
     }
 

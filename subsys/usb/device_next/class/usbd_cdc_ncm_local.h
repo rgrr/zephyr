@@ -37,11 +37,14 @@
 #endif
 
 #define CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB  1
-#define CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE           2048    // see discussion in https://github.com/hathach/tinyusb/pull/2227
-#define CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE           2048
+#define CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE           2050    // see discussion in https://github.com/hathach/tinyusb/pull/2227
+#define CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE           2050
 
 #if (CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE != CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE)
     #error "CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE != CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE"
+#endif
+#if (CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE % 64 == 0)
+    #error "CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE must not be a multiple of 64 (to avoid ZLPs)"
 #endif
 
 // Table 6.2 Class-Specific Request Codes for Network Control Model subclass
@@ -124,7 +127,7 @@ typedef union __packed {
         ndp16_t          ndp;
         ndp16_datagram_t ndp_datagram[CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB + 1];
     };
-    uint8_t data[CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE];
+    uint8_t data[CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE - sizeof(nth16_t) - sizeof(ndp16_t) - (CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB + 1)*sizeof(ndp16_datagram_t)];
 } xmit_ntb_t;
 
 typedef union __packed {
