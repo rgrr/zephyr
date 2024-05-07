@@ -26,6 +26,12 @@
  * - itf_data_alt  if != 0 -> data xmit/recv are allowed (see spec)
  * - ep_in         IN endpoints take data from the device intended to go in to the host (the device transmits)
  * - ep_out        OUT endpoints send data out of the host to the device (the device receives)
+ *
+ * Linux host NCM driver
+ * ---------------------
+ * - https://github.com/torvalds/linux/blob/master/drivers/net/usb/cdc_ncm.c
+ * - https://github.com/torvalds/linux/blob/master/include/linux/usb/cdc_ncm.h
+ * - https://github.com/torvalds/linux/blob/master/include/uapi/linux/usb/cdc.h
  */
 
 #define DT_DRV_COMPAT zephyr_cdc_ncm_ethernet
@@ -43,7 +49,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(cdc_ncm, CONFIG_USBD_CDC_NCM_LOG_LEVEL);
 
-#include "usbd_cdc_ncm_local.h"
+#include "usbd_cdc_ncm_private.h"
 
 #define CDC_NCM_EP_MPS_INT                  64
 #define CDC_NCM_INTERVAL_DEFAULT            50000UL
@@ -63,11 +69,11 @@ enum {
 
 /*
  * Transfers through two endpoints proceed in a synchronous manner,
- * with maximum block of CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE.
+ * with maximum block of CFG_CDC_NCM_XMT_NTB_MAX_SIZE.
  */
 NET_BUF_POOL_FIXED_DEFINE(cdc_ncm_ep_pool,
           DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) * 2,
-          CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE,
+          MAX(CFG_CDC_NCM_XMT_NTB_MAX_SIZE, CFG_CDC_NCM_RCV_NTB_MAX_SIZE),
           sizeof(struct udc_buf_info), NULL);
 
 
@@ -77,16 +83,16 @@ NET_BUF_POOL_FIXED_DEFINE(cdc_ncm_ep_pool,
 static struct ntb_parameters_t ntb_parameters = {
     .wLength                 = sys_cpu_to_le16(sizeof(struct ntb_parameters_t)),
     .bmNtbFormatsSupported   = sys_cpu_to_le16(0x01),                                 // 16-bit NTB supported
-    .dwNtbInMaxSize          = sys_cpu_to_le32(CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE),
+    .dwNtbInMaxSize          = sys_cpu_to_le32(CFG_CDC_NCM_XMT_NTB_MAX_SIZE),
     .wNdbInDivisor           = sys_cpu_to_le16(4),
     .wNdbInPayloadRemainder  = sys_cpu_to_le16(0),
-    .wNdbInAlignment         = sys_cpu_to_le16(CONFIG_CDC_NCM_ALIGNMENT),
+    .wNdbInAlignment         = sys_cpu_to_le16(CFG_CDC_NCM_ALIGNMENT),
     .wReserved               = sys_cpu_to_le16(0),
-    .dwNtbOutMaxSize         = sys_cpu_to_le32(CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE),
+    .dwNtbOutMaxSize         = sys_cpu_to_le32(CFG_CDC_NCM_RCV_NTB_MAX_SIZE),
     .wNdbOutDivisor          = sys_cpu_to_le16(4),
     .wNdbOutPayloadRemainder = sys_cpu_to_le16(0),
-    .wNdbOutAlignment        = sys_cpu_to_le16(CONFIG_CDC_NCM_ALIGNMENT),
-    .wNtbOutMaxDatagrams     = sys_cpu_to_le16(CONFIG_CDC_NCM_RCV_MAX_DATAGRAMS_PER_NTB)
+    .wNdbOutAlignment        = sys_cpu_to_le16(CFG_CDC_NCM_ALIGNMENT),
+    .wNtbOutMaxDatagrams     = sys_cpu_to_le16(CFG_CDC_NCM_RCV_MAX_DATAGRAMS_PER_NTB)
 };
 
 static struct ncm_notify_network_connection_t ncm_notify_connected = {
@@ -337,9 +343,9 @@ static bool _cdc_ncm_frame_ok(struct cdc_ncm_eth_data *data, struct net_buf *con
         LOG_ERR("  ill block length: %d > %d", sys_le16_to_cpu(nth16->wBlockLength), len);
         return false;
     }
-    if (sys_le16_to_cpu(nth16->wBlockLength) > CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE)
+    if (sys_le16_to_cpu(nth16->wBlockLength) > CFG_CDC_NCM_RCV_NTB_MAX_SIZE)
     {
-        LOG_ERR("  ill block length2: %d > %d", sys_le16_to_cpu(nth16->wBlockLength), CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE);
+        LOG_ERR("  ill block length2: %d > %d", sys_le16_to_cpu(nth16->wBlockLength), CFG_CDC_NCM_RCV_NTB_MAX_SIZE);
         return false;
     }
     if (sys_le16_to_cpu(nth16->wNdpIndex) < sizeof(nth16)  ||  sys_le16_to_cpu(nth16->wNdpIndex) > len - (sizeof(struct ndp16_t) + 2*sizeof(struct ndp16_datagram_t)))
@@ -379,7 +385,7 @@ static bool _cdc_ncm_frame_ok(struct cdc_ncm_eth_data *data, struct net_buf *con
     int ndx = 0;
     uint16_t max_ndx = (uint16_t)((sys_le16_to_cpu(ndp16->wLength) - sizeof(struct ndp16_t)) / sizeof(struct ndp16_datagram_t));
 
-    if (max_ndx > CONFIG_CDC_NCM_RCV_MAX_DATAGRAMS_PER_NTB + 1)
+    if (max_ndx > CFG_CDC_NCM_RCV_MAX_DATAGRAMS_PER_NTB + 1)
     {
         // number of datagrams in NTB > 1
         LOG_ERR("<<xyx %d (%d)", max_ndx - 1, sys_le16_to_cpu(ntb->nth.wBlockLength));
@@ -901,7 +907,7 @@ static int cdc_ncm_send(const struct device *dev, struct net_pkt *const pkt)
     ntb->nth.wNdpIndex     = sys_cpu_to_le16(sizeof(struct nth16_t));
 
     ntb->ndp.dwSignature   = sys_cpu_to_le32(NDP16_SIGNATURE_NCM0);
-    ntb->ndp.wLength       = sys_cpu_to_le16(sizeof(struct ndp16_t) + (CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB + 1)*sizeof(struct ndp16_datagram_t));
+    ntb->ndp.wLength       = sys_cpu_to_le16(sizeof(struct ndp16_t) + (CFG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB + 1)*sizeof(struct ndp16_datagram_t));
     ntb->ndp.wNextNdpIndex = 0;
 
     ntb->ndp_datagram[0].wDatagramIndex  = sys_cpu_to_le16(sys_le16_to_cpu(ntb->nth.wHeaderLength) + sys_le16_to_cpu(ntb->ndp.wLength));

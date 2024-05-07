@@ -29,21 +29,17 @@
 #define __USBD_CDC_NCM_LOCAL_H_
 
 
-#ifndef CONFIG_CDC_NCM_ALIGNMENT
-    #define CONFIG_CDC_NCM_ALIGNMENT              4
+#ifndef CFG_CDC_NCM_ALIGNMENT
+    #define CFG_CDC_NCM_ALIGNMENT                 4
 #endif
-#if (CONFIG_CDC_NCM_ALIGNMENT != 4)
-    #error "CONFIG_CDC_NCM_ALIGNMENT must be 4, otherwise the headers and start of datagrams have to be aligned (which they are currently not)"
+#if (CFG_CDC_NCM_ALIGNMENT != 4)
+    #error "CFG_CDC_NCM_ALIGNMENT must be 4, otherwise the headers and start of datagrams have to be aligned (which they are currently not)"
 #endif
 
-#define CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB  1
-#define CONFIG_CDC_NCM_RCV_MAX_DATAGRAMS_PER_NTB  1
-#define CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE           3200    // see discussion in https://github.com/hathach/tinyusb/pull/2227
-#define CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE           3200
-
-#if (CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE != CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE)
-    #error "CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE != CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE"
-#endif
+#define CFG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB     1
+#define CFG_CDC_NCM_RCV_MAX_DATAGRAMS_PER_NTB     1
+#define CFG_CDC_NCM_XMT_NTB_MAX_SIZE              2048    // min 2048 according to spec 6.2.7
+#define CFG_CDC_NCM_RCV_NTB_MAX_SIZE              3200    // see discussion in https://github.com/hathach/tinyusb/pull/2227
 
 // Table 6.2 Class-Specific Request Codes for Network Control Model subclass
 typedef enum
@@ -123,9 +119,9 @@ union xmit_ntb_t {
     struct {
         struct nth16_t          nth;
         struct ndp16_t          ndp;
-        struct ndp16_datagram_t ndp_datagram[CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB + 1];
+        struct ndp16_datagram_t ndp_datagram[CFG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB + 1];
     };
-    uint8_t data[CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE];
+    uint8_t data[CFG_CDC_NCM_XMT_NTB_MAX_SIZE];
 } __packed;
 
 union recv_ntb_t {
@@ -133,7 +129,7 @@ union recv_ntb_t {
         struct nth16_t nth;
         // only the header is at a guaranteed position
     };
-    uint8_t data[CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE];
+    uint8_t data[CFG_CDC_NCM_RCV_NTB_MAX_SIZE];
 } __packed;
 
 // network endianess = LE!
