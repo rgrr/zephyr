@@ -46,9 +46,12 @@ LOG_MODULE_REGISTER(cdc_ncm, CONFIG_USBD_CDC_NCM_LOG_LEVEL);
 #include "usbd_cdc_ncm_local.h"
 
 #define CDC_NCM_EP_MPS_INT                  64
-#define CDC_NCM_INTERVAL_DEFAULT            10000UL
+#define CDC_NCM_INTERVAL_DEFAULT            50000UL
 #define CDC_NCM_FS_INT_EP_INTERVAL          USB_FS_INT_EP_INTERVAL(CDC_NCM_INTERVAL_DEFAULT)
 #define CDC_NCM_HS_INT_EP_INTERVAL          USB_HS_INT_EP_INTERVAL(CDC_NCM_INTERVAL_DEFAULT)
+
+#define USB_SPEED_FS                        12000000
+#define USB_SPEED_HS                        480000000
 
 /// several flags
 enum {
@@ -71,8 +74,8 @@ NET_BUF_POOL_FIXED_DEFINE(cdc_ncm_ep_pool,
 /**
  * This is the NTB parameter structure
  */
-static ntb_parameters_t ntb_parameters = {
-    .wLength                 = sys_cpu_to_le16(sizeof(ntb_parameters_t)),
+static struct ntb_parameters_t ntb_parameters = {
+    .wLength                 = sys_cpu_to_le16(sizeof(struct ntb_parameters_t)),
     .bmNtbFormatsSupported   = sys_cpu_to_le16(0x01),                                 // 16-bit NTB supported
     .dwNtbInMaxSize          = sys_cpu_to_le32(CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE),
     .wNdbInDivisor           = sys_cpu_to_le16(4),
@@ -86,7 +89,7 @@ static ntb_parameters_t ntb_parameters = {
     .wNtbOutMaxDatagrams     = sys_cpu_to_le16(CONFIG_CDC_NCM_RCV_MAX_DATAGRAMS_PER_NTB)
 };
 
-static ncm_notify_network_connection_t ncm_notify_connected = {
+static struct ncm_notify_network_connection_t ncm_notify_connected = {
         .header = {
                 .RequestType = {
                         .recipient = USB_REQTYPE_RECIPIENT_INTERFACE,
@@ -99,7 +102,7 @@ static ncm_notify_network_connection_t ncm_notify_connected = {
         },
 };
 
-static ncm_notify_connection_speed_change_t ncm_notify_speed_change = {
+static struct ncm_notify_connection_speed_change_t ncm_notify_speed_change = {
         .header = {
                 .RequestType = {
                         .recipient = USB_REQTYPE_RECIPIENT_INTERFACE,
@@ -109,8 +112,8 @@ static ncm_notify_connection_speed_change_t ncm_notify_speed_change = {
                 .bRequest = NCM_NOTIFICATION_CONNECTION_SPEED_CHANGE,
                 .wLength  = sys_cpu_to_le16(8),
         },
-        .downlink = sys_cpu_to_le32(12000000),
-        .uplink   = sys_cpu_to_le32(12000000),
+        .downlink = sys_cpu_to_le32(USB_SPEED_FS),                          // see USBCDC12, 6.3.3
+        .uplink   = sys_cpu_to_le32(USB_SPEED_FS),
 };
 
 
@@ -300,8 +303,8 @@ static bool _cdc_ncm_frame_ok(struct cdc_ncm_eth_data *data, struct net_buf *con
  * check a received NTB
  */
 {
-    const recv_ntb_t *ntb = (recv_ntb_t *)buf->data;
-    const nth16_t *nth16 = &(ntb->nth);
+    const union recv_ntb_t *ntb = (union recv_ntb_t *)buf->data;
+    const struct nth16_t *nth16 = &(ntb->nth);
     const uint16_t len = buf->len;
 
     LOG_DBG("%p, %d", ntb, (int)len);
@@ -314,7 +317,7 @@ static bool _cdc_ncm_frame_ok(struct cdc_ncm_eth_data *data, struct net_buf *con
         LOG_ERR("  ill length: %d", len);
         return false;
     }
-    if (sys_le16_to_cpu(nth16->wHeaderLength) != sizeof(nth16_t))
+    if (sys_le16_to_cpu(nth16->wHeaderLength) != sizeof(struct nth16_t))
     {
         LOG_ERR("  ill nth16 length: %d", sys_le16_to_cpu(nth16->wHeaderLength));
         return false;
@@ -324,7 +327,7 @@ static bool _cdc_ncm_frame_ok(struct cdc_ncm_eth_data *data, struct net_buf *con
         LOG_ERR("  ill signature: 0x%08x", (unsigned)sys_le32_to_cpu(nth16->dwSignature));
         return false;
     }
-    if (len < sizeof(nth16_t) + sizeof(ndp16_t) + 2*sizeof(ndp16_datagram_t))
+    if (len < sizeof(struct nth16_t) + sizeof(struct ndp16_t) + 2*sizeof(struct ndp16_datagram_t))
     {
         LOG_ERR("  ill min len: %d", len);
         return false;
@@ -339,7 +342,7 @@ static bool _cdc_ncm_frame_ok(struct cdc_ncm_eth_data *data, struct net_buf *con
         LOG_ERR("  ill block length2: %d > %d", sys_le16_to_cpu(nth16->wBlockLength), CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE);
         return false;
     }
-    if (sys_le16_to_cpu(nth16->wNdpIndex) < sizeof(nth16)  ||  sys_le16_to_cpu(nth16->wNdpIndex) > len - (sizeof(ndp16_t) + 2*sizeof(ndp16_datagram_t)))
+    if (sys_le16_to_cpu(nth16->wNdpIndex) < sizeof(nth16)  ||  sys_le16_to_cpu(nth16->wNdpIndex) > len - (sizeof(struct ndp16_t) + 2*sizeof(struct ndp16_datagram_t)))
     {
         LOG_ERR("  ill position of first ndp: %d (%d)", sys_le16_to_cpu(nth16->wNdpIndex), len);
         return false;
@@ -354,9 +357,9 @@ static bool _cdc_ncm_frame_ok(struct cdc_ncm_eth_data *data, struct net_buf *con
     //
     // check (first) NDP(16)
     //
-    const ndp16_t *ndp16 = (const ndp16_t *)(ntb->data + sys_le16_to_cpu(nth16->wNdpIndex));
+    const struct ndp16_t *ndp16 = (const struct ndp16_t *)(ntb->data + sys_le16_to_cpu(nth16->wNdpIndex));
 
-    if (sys_le16_to_cpu(ndp16->wLength) < sizeof(ndp16_t) + 2*sizeof(ndp16_datagram_t))
+    if (sys_le16_to_cpu(ndp16->wLength) < sizeof(struct ndp16_t) + 2*sizeof(struct ndp16_datagram_t))
     {
         LOG_ERR("  ill ndp16 length: %d", sys_le16_to_cpu(ndp16->wLength));
         return false;
@@ -372,9 +375,9 @@ static bool _cdc_ncm_frame_ok(struct cdc_ncm_eth_data *data, struct net_buf *con
         return false;
     }
 
-    const ndp16_datagram_t *ndp16_datagram = (const ndp16_datagram_t *)(ntb->data + sys_le16_to_cpu(nth16->wNdpIndex) + sizeof(ndp16_t));
+    const struct ndp16_datagram_t *ndp16_datagram = (const struct ndp16_datagram_t *)(ntb->data + sys_le16_to_cpu(nth16->wNdpIndex) + sizeof(struct ndp16_t));
     int ndx = 0;
-    uint16_t max_ndx = (uint16_t)((sys_le16_to_cpu(ndp16->wLength) - sizeof(ndp16_t)) / sizeof(ndp16_datagram_t));
+    uint16_t max_ndx = (uint16_t)((sys_le16_to_cpu(ndp16->wLength) - sizeof(struct ndp16_t)) / sizeof(struct ndp16_datagram_t));
 
     if (max_ndx > CONFIG_CDC_NCM_RCV_MAX_DATAGRAMS_PER_NTB + 1)
     {
@@ -420,8 +423,8 @@ static int cdc_ncm_acl_out_cb(struct usbd_class_data *const c_data,
     const struct device *dev = usbd_class_get_private(c_data);
     struct cdc_ncm_eth_data *data = dev->data;
     struct net_pkt *pkt;
-    recv_ntb_t *ntb;
-    ndp16_datagram_t *ndp_datagram;
+    union recv_ntb_t *ntb;
+    struct ndp16_datagram_t *ndp_datagram;
 
     LOG_DBG("len %d err %d", buf->len, err);
 
@@ -438,8 +441,8 @@ static int cdc_ncm_acl_out_cb(struct usbd_class_data *const c_data,
         goto restart_out_transfer;
     }
 
-    ntb = (recv_ntb_t *)buf->data;
-    ndp_datagram = (ndp16_datagram_t *)(ntb->data + sys_le16_to_cpu(ntb->nth.wNdpIndex) + sizeof(ndp16_t));
+    ntb = (union recv_ntb_t *)buf->data;
+    ndp_datagram = (struct ndp16_datagram_t *)(ntb->data + sys_le16_to_cpu(ntb->nth.wNdpIndex) + sizeof(struct ndp16_t));
 
     uint16_t start = sys_le16_to_cpu(ndp_datagram[0].wDatagramIndex);
     uint16_t len   = sys_le16_to_cpu(ndp_datagram[0].wDatagramLength);
@@ -525,11 +528,13 @@ static int _usbd_cdc_ncm_send_notification(const struct device *dev, const void 
 
 
 
-static void _usbd_cdc_ncm_notification_next_step(const struct device *dev)
+static void _usbd_cdc_ncm_notification_next_step(struct usbd_class_data *const c_data)
 /**
  * Send \a ConnectionSpeedChange and then \a NetworkConnection to the host.
  */
 {
+    struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+    const struct device *dev = usbd_class_get_private(c_data);
     struct cdc_ncm_eth_data *data = dev->data;
     int ret;
 
@@ -537,9 +542,13 @@ static void _usbd_cdc_ncm_notification_next_step(const struct device *dev)
 
     if (data->if_state == IF_STATE_FIRST_SKIPPED)
     {
+        uint32_t usb_speed = (usbd_bus_speed(uds_ctx) == USBD_SPEED_FS) ? USB_SPEED_FS : USB_SPEED_HS;
+
         data->if_state = IF_STATE_SPEED_SENT;
 
         ncm_notify_speed_change.header.wIndex = sys_cpu_to_le16(cdc_ncm_get_ctrl_if(data));
+        ncm_notify_speed_change.downlink = sys_cpu_to_le32(usb_speed);
+        ncm_notify_speed_change.uplink   = sys_cpu_to_le32(usb_speed);
         ret = _usbd_cdc_ncm_send_notification(dev, &ncm_notify_speed_change, sizeof(ncm_notify_speed_change));
         LOG_DBG("cdc_ncm_send_notification_speed_change %d", ret);
     }
@@ -582,7 +591,7 @@ static int usbd_cdc_ncm_request(struct usbd_class_data *const c_data,
 
     if (bi->ep == cdc_ncm_get_int_in(c_data)) {
         LOG_DBG("notification");
-        _usbd_cdc_ncm_notification_next_step(dev);
+        _usbd_cdc_ncm_notification_next_step(c_data);
         return 0;
     }
 
@@ -620,6 +629,7 @@ static void usbd_cdc_ncm_update(struct usbd_class_data *const c_data,
         // reset internal status
         //
         data->tx_sequence = 0;
+        data->if_state = IF_STATE_FIRST_SKIPPED;
         return;
     }
 
@@ -638,7 +648,7 @@ static void usbd_cdc_ncm_update(struct usbd_class_data *const c_data,
         LOG_ERR("Failed to start OUT transfer");
     }
 
-    _usbd_cdc_ncm_notification_next_step(dev);
+    _usbd_cdc_ncm_notification_next_step(c_data);
 }   // usbd_cdc_ncm_update
 
 
@@ -851,7 +861,7 @@ static int cdc_ncm_send(const struct device *dev, struct net_pkt *const pkt)
     struct usbd_class_data *c_data = data->c_data;
     size_t len = net_pkt_get_len(pkt);
     struct net_buf *buf;
-    xmit_ntb_t *ntb;
+    union xmit_ntb_t *ntb;
 
     LOG_DBG("len: %d", len);
 
@@ -878,15 +888,15 @@ static int cdc_ncm_send(const struct device *dev, struct net_pkt *const pkt)
     //
     // create (simple) NTB
     //
-    ntb = (xmit_ntb_t *)buf->data;
+    ntb = (union xmit_ntb_t *)buf->data;
 
     ntb->nth.dwSignature   = sys_cpu_to_le32(NTH16_SIGNATURE);
-    ntb->nth.wHeaderLength = sys_cpu_to_le16(sizeof(nth16_t));
+    ntb->nth.wHeaderLength = sys_cpu_to_le16(sizeof(struct nth16_t));
     ntb->nth.wSequence     = sys_cpu_to_le16(++data->tx_sequence);
-    ntb->nth.wNdpIndex     = sys_cpu_to_le16(sizeof(nth16_t));
+    ntb->nth.wNdpIndex     = sys_cpu_to_le16(sizeof(struct nth16_t));
 
     ntb->ndp.dwSignature   = sys_cpu_to_le32(NDP16_SIGNATURE_NCM0);
-    ntb->ndp.wLength       = sys_cpu_to_le16(sizeof(ndp16_t) + (CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB + 1)*sizeof(ndp16_datagram_t));
+    ntb->ndp.wLength       = sys_cpu_to_le16(sizeof(struct ndp16_t) + (CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB + 1)*sizeof(struct ndp16_datagram_t));
     ntb->ndp.wNextNdpIndex = 0;
 
     ntb->ndp_datagram[0].wDatagramIndex  = sys_cpu_to_le16(sys_le16_to_cpu(ntb->nth.wHeaderLength) + sys_le16_to_cpu(ntb->ndp.wLength));

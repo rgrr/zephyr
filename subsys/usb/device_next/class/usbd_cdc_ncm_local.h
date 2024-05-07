@@ -1,7 +1,7 @@
 /*
- * The MIT License (MIT)
+ * Copyright (c) 2024 Hardy Griech
  *
- * Copyright (c) 2024, Hardy Griech
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -84,7 +84,7 @@ typedef enum
 #define NDP16_SIGNATURE_NCM1 0x314D434E
 
 // network endianess = LE!
-typedef struct __packed {
+struct ntb_parameters_t {
     uint16_t wLength;
     uint16_t bmNtbFormatsSupported;
     uint32_t dwNtbInMaxSize;
@@ -97,58 +97,58 @@ typedef struct __packed {
     uint16_t wNdbOutPayloadRemainder;
     uint16_t wNdbOutAlignment;
     uint16_t wNtbOutMaxDatagrams;
-} ntb_parameters_t;
+} __packed;
 
 // network endianess = LE!
-typedef struct __packed {
+struct nth16_t {
     uint32_t dwSignature;
     uint16_t wHeaderLength;
     uint16_t wSequence;
     uint16_t wBlockLength;
     uint16_t wNdpIndex;
-} nth16_t;
+} __packed;
 
 // network endianess = LE!
-typedef struct __packed {
+struct ndp16_datagram_t {
     uint16_t wDatagramIndex;
     uint16_t wDatagramLength;
-} ndp16_datagram_t;
+} __packed;
 
 // network endianess = LE!
-typedef struct __packed {
+struct ndp16_t {
     uint32_t dwSignature;
     uint16_t wLength;
     uint16_t wNextNdpIndex;
     //ndp16_datagram_t datagram[];
-} ndp16_t;
+} __packed;
 
-typedef union __packed {
+union xmit_ntb_t {
     struct {
-        nth16_t          nth;
-        ndp16_t          ndp;
-        ndp16_datagram_t ndp_datagram[CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB + 1];
+        struct nth16_t          nth;
+        struct ndp16_t          ndp;
+        struct ndp16_datagram_t ndp_datagram[CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB + 1];
     };
-    uint8_t data[CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE - sizeof(nth16_t) - sizeof(ndp16_t) - (CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB + 1)*sizeof(ndp16_datagram_t)];
-} xmit_ntb_t;
+    uint8_t data[CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE];
+} __packed;
 
-typedef union __packed {
+union recv_ntb_t {
     struct {
-        nth16_t nth;
+        struct nth16_t nth;
         // only the header is at a guaranteed position
     };
-    uint8_t data[CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE - sizeof(nth16_t)];
-} recv_ntb_t;
+    uint8_t data[CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE];
+} __packed;
 
 // network endianess = LE!
-typedef struct __packed {
+struct ncm_notify_connection_speed_change_t {
     struct usb_setup_packet header;
     uint32_t                downlink, uplink;
-} ncm_notify_connection_speed_change_t;
+} __packed;
 
 // network endianess = LE!
-typedef struct __packed {
+struct ncm_notify_network_connection_t {
     struct usb_setup_packet header;
-} ncm_notify_network_connection_t;
+} __packed;
 
 
 #endif
