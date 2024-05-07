@@ -83,7 +83,7 @@ static ntb_parameters_t ntb_parameters = {
     .wNdbOutDivisor          = sys_cpu_to_le16(4),
     .wNdbOutPayloadRemainder = sys_cpu_to_le16(0),
     .wNdbOutAlignment        = sys_cpu_to_le16(CONFIG_CDC_NCM_ALIGNMENT),
-    .wNtbOutMaxDatagrams     = sys_cpu_to_le16(1)
+    .wNtbOutMaxDatagrams     = sys_cpu_to_le16(CONFIG_CDC_NCM_RCV_MAX_DATAGRAMS_PER_NTB)
 };
 
 static ncm_notify_network_connection_t ncm_notify_connected = {
@@ -164,7 +164,8 @@ struct cdc_ncm_eth_data {
     // misc
     uint8_t itf_data_alt;                                    //!< ==0 -> no endpoints, i.e. no network traffic, ==1 -> normal operation with two endpoints (spec, chapter 5.3)
 
-    uint16_t sequence;                                       //!< sequence counter for transmit frames
+    uint16_t tx_sequence;                                    //!< sequence counter for transmit NTBs
+    uint16_t rx_sequence;                                    //!< sequence counter for receive NTBs
 };
 
 
@@ -270,23 +271,19 @@ static int cdc_ncm_out_start(struct usbd_class_data *const c_data)
 
     LOG_DBG("%ld", data->state);
     if (!atomic_test_bit(&data->state, CDC_NCM_CLASS_ENABLED)) {
-        LOG_DBG("x1");
         return -EACCES;
     }
 
     if (atomic_test_and_set_bit(&data->state, CDC_NCM_OUT_ENGAGED)) {
-        LOG_DBG("x2");
         return -EBUSY;
     }
 
     ep = cdc_ncm_get_bulk_out(c_data);
     buf = cdc_ncm_buf_alloc(ep);
     if (buf == NULL) {
-        LOG_DBG("x3");
         return -ENOMEM;
     }
 
-    LOG_DBG("x4");
     ret = usbd_ep_enqueue(c_data, buf);
     if (ret) {
         LOG_ERR("Failed to enqueue net_buf for 0x%02x", ep);
@@ -295,6 +292,122 @@ static int cdc_ncm_out_start(struct usbd_class_data *const c_data)
 
     return  ret;
 }   // cdc_ncm_out_start
+
+
+
+static bool _cdc_ncm_frame_ok(struct cdc_ncm_eth_data *data, struct net_buf *const buf)
+/**
+ * check a received NTB
+ */
+{
+    const recv_ntb_t *ntb = (recv_ntb_t *)buf->data;
+    const nth16_t *nth16 = &(ntb->nth);
+    const uint16_t len = buf->len;
+
+    LOG_DBG("%p, %d", ntb, (int)len);
+
+    //
+    // check header
+    //
+    if (len < sizeof(ntb->nth))
+    {
+        LOG_ERR("  ill length: %d", len);
+        return false;
+    }
+    if (sys_le16_to_cpu(nth16->wHeaderLength) != sizeof(nth16_t))
+    {
+        LOG_ERR("  ill nth16 length: %d", sys_le16_to_cpu(nth16->wHeaderLength));
+        return false;
+    }
+    if (sys_le32_to_cpu(nth16->dwSignature) != NTH16_SIGNATURE)
+    {
+        LOG_ERR("  ill signature: 0x%08x", (unsigned)sys_le32_to_cpu(nth16->dwSignature));
+        return false;
+    }
+    if (len < sizeof(nth16_t) + sizeof(ndp16_t) + 2*sizeof(ndp16_datagram_t))
+    {
+        LOG_ERR("  ill min len: %d", len);
+        return false;
+    }
+    if (sys_le16_to_cpu(nth16->wBlockLength) > len)
+    {
+        LOG_ERR("  ill block length: %d > %d", sys_le16_to_cpu(nth16->wBlockLength), len);
+        return false;
+    }
+    if (sys_le16_to_cpu(nth16->wBlockLength) > CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE)
+    {
+        LOG_ERR("  ill block length2: %d > %d", sys_le16_to_cpu(nth16->wBlockLength), CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE);
+        return false;
+    }
+    if (sys_le16_to_cpu(nth16->wNdpIndex) < sizeof(nth16)  ||  sys_le16_to_cpu(nth16->wNdpIndex) > len - (sizeof(ndp16_t) + 2*sizeof(ndp16_datagram_t)))
+    {
+        LOG_ERR("  ill position of first ndp: %d (%d)", sys_le16_to_cpu(nth16->wNdpIndex), len);
+        return false;
+    }
+
+    if (sys_le16_to_cpu(nth16->wSequence) != 0  &&  sys_le16_to_cpu(nth16->wSequence) != data->rx_sequence + 1)
+    {
+        LOG_ERR("problem with sequence: %d %d", data->rx_sequence, sys_le16_to_cpu(nth16->wSequence));
+    }
+    data->rx_sequence = sys_le16_to_cpu(nth16->wSequence);
+
+    //
+    // check (first) NDP(16)
+    //
+    const ndp16_t *ndp16 = (const ndp16_t *)(ntb->data + sys_le16_to_cpu(nth16->wNdpIndex));
+
+    if (sys_le16_to_cpu(ndp16->wLength) < sizeof(ndp16_t) + 2*sizeof(ndp16_datagram_t))
+    {
+        LOG_ERR("  ill ndp16 length: %d", sys_le16_to_cpu(ndp16->wLength));
+        return false;
+    }
+    if (sys_le32_to_cpu(ndp16->dwSignature) != NDP16_SIGNATURE_NCM0  &&  sys_le32_to_cpu(ndp16->dwSignature) != NDP16_SIGNATURE_NCM1)
+    {
+        LOG_ERR("  ill signature: 0x%08x", (unsigned)sys_le32_to_cpu(ndp16->dwSignature));
+        return false;
+    }
+    if (sys_le16_to_cpu(ndp16->wNextNdpIndex) != 0)
+    {
+        LOG_ERR("  cannot handle wNextNdpIndex!=0 (%d)", sys_le16_to_cpu(ndp16->wNextNdpIndex));
+        return false;
+    }
+
+    const ndp16_datagram_t *ndp16_datagram = (const ndp16_datagram_t *)(ntb->data + sys_le16_to_cpu(nth16->wNdpIndex) + sizeof(ndp16_t));
+    int ndx = 0;
+    uint16_t max_ndx = (uint16_t)((sys_le16_to_cpu(ndp16->wLength) - sizeof(ndp16_t)) / sizeof(ndp16_datagram_t));
+
+    if (max_ndx > CONFIG_CDC_NCM_RCV_MAX_DATAGRAMS_PER_NTB + 1)
+    {
+        // number of datagrams in NTB > 1
+        LOG_ERR("<<xyx %d (%d)", max_ndx - 1, sys_le16_to_cpu(ntb->nth.wBlockLength));
+    }
+    if (sys_le16_to_cpu(ndp16_datagram[max_ndx-1].wDatagramIndex) != 0  ||  sys_le16_to_cpu(ndp16_datagram[max_ndx-1].wDatagramLength) != 0)
+    {
+        LOG_DBG("  max_ndx != 0");
+        return false;
+    }
+    while (sys_le16_to_cpu(ndp16_datagram[ndx].wDatagramIndex) != 0  &&  sys_le16_to_cpu(ndp16_datagram[ndx].wDatagramLength) != 0)
+    {
+        LOG_DBG("  << %d %d", sys_le16_to_cpu(ndp16_datagram[ndx].wDatagramIndex), sys_le16_to_cpu(ndp16_datagram[ndx].wDatagramLength));
+        if (sys_le16_to_cpu(ndp16_datagram[ndx].wDatagramIndex) > len)
+        {
+            LOG_ERR("(EE) ill start of datagram[%d]: %d (%d)", ndx, sys_le16_to_cpu(ndp16_datagram[ndx].wDatagramIndex), len);
+            return false;
+        }
+        if (sys_le16_to_cpu(ndp16_datagram[ndx].wDatagramIndex) + sys_le16_to_cpu(ndp16_datagram[ndx].wDatagramLength) > len)
+        {
+            LOG_ERR("(EE) ill end of datagram[%d]: %d (%d)", ndx,
+                    sys_le16_to_cpu(ndp16_datagram[ndx].wDatagramIndex) + sys_le16_to_cpu(ndp16_datagram[ndx].wDatagramLength), len);
+            return false;
+        }
+        ++ndx;
+    }
+
+    LOG_HEXDUMP_DBG(ntb->data, len, "NTB");
+
+    // -> ntb contains a valid packet structure
+    return true;
+}   // _cdc_ncm_frame_ok
 
 
 
@@ -307,10 +420,11 @@ static int cdc_ncm_acl_out_cb(struct usbd_class_data *const c_data,
     const struct device *dev = usbd_class_get_private(c_data);
     struct cdc_ncm_eth_data *data = dev->data;
     struct net_pkt *pkt;
-    nth16_t *ntb;
+    recv_ntb_t *ntb;
     ndp16_datagram_t *ndp_datagram;
 
     LOG_DBG("len %d err %d", buf->len, err);
+
     if (err  ||  buf->len == 0)
     {
         goto restart_out_transfer;
@@ -318,31 +432,17 @@ static int cdc_ncm_acl_out_cb(struct usbd_class_data *const c_data,
 
 //    LOG_HEXDUMP_DBG(buf->data, buf->len, "ntb");
 
-    // NO VALIDITY CHECKING
+    if ( !_cdc_ncm_frame_ok(data, buf))
+    {
+        LOG_ERR("ill frame received from host");
+        goto restart_out_transfer;
+    }
 
-    ntb = (nth16_t *)buf->data;
-    ndp_datagram = (ndp16_datagram_t *)(buf->data + sys_le16_to_cpu(ntb->wNdpIndex) + sizeof(ndp16_t));
+    ntb = (recv_ntb_t *)buf->data;
+    ndp_datagram = (ndp16_datagram_t *)(ntb->data + sys_le16_to_cpu(ntb->nth.wNdpIndex) + sizeof(ndp16_t));
 
     uint16_t start = sys_le16_to_cpu(ndp_datagram[0].wDatagramIndex);
     uint16_t len   = sys_le16_to_cpu(ndp_datagram[0].wDatagramLength);
-
-#if 0
-    // this actually doen't matter for NCM
-    /* Linux considers by default that network usb device controllers are
-     * not able to handle Zero Length Packet (ZLP) and then generates
-     * a short packet containing a null byte. Handle by checking the IP
-     * header length and dropping the extra byte.
-     */
-    if (buf->data[start + len - 1] == 0U)
-    {
-        /* Last byte is null */
-        if (ncm_eth_size(buf->data + start, len) == (len - 1)) {
-            /* last byte has been appended as delimiter, drop it */
-            LOG_WRN("removed trailing byte");
-            len--;
-        }
-    }
-#endif
 
     pkt = net_pkt_rx_alloc_with_buffer(data->iface, len, AF_UNSPEC, 0, K_FOREVER);
     if (pkt == NULL)
@@ -353,7 +453,7 @@ static int cdc_ncm_acl_out_cb(struct usbd_class_data *const c_data,
 
 //    LOG_HEXDUMP_DBG(buf->data + start, len, "frame");
 
-    if (net_pkt_write(pkt, buf->data + start, len))
+    if (net_pkt_write(pkt, ntb->data + start, len))
     {
         LOG_ERR("Unable to write into pkt");
         net_pkt_unref(pkt);
@@ -519,7 +619,7 @@ static void usbd_cdc_ncm_update(struct usbd_class_data *const c_data,
         //
         // reset internal status
         //
-        data->sequence = 0;
+        data->tx_sequence = 0;
         return;
     }
 
@@ -782,7 +882,7 @@ static int cdc_ncm_send(const struct device *dev, struct net_pkt *const pkt)
 
     ntb->nth.dwSignature   = sys_cpu_to_le32(NTH16_SIGNATURE);
     ntb->nth.wHeaderLength = sys_cpu_to_le16(sizeof(nth16_t));
-    ntb->nth.wSequence     = sys_cpu_to_le16(++data->sequence);
+    ntb->nth.wSequence     = sys_cpu_to_le16(++data->tx_sequence);
     ntb->nth.wNdpIndex     = sys_cpu_to_le16(sizeof(nth16_t));
 
     ntb->ndp.dwSignature   = sys_cpu_to_le32(NDP16_SIGNATURE_NCM0);

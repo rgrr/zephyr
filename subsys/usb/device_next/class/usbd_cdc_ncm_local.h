@@ -37,6 +37,7 @@
 #endif
 
 #define CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB  1
+#define CONFIG_CDC_NCM_RCV_MAX_DATAGRAMS_PER_NTB  1
 #define CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE           2050    // see discussion in https://github.com/hathach/tinyusb/pull/2227
 #define CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE           2050
 
@@ -135,7 +136,7 @@ typedef union __packed {
         nth16_t nth;
         // only the header is at a guaranteed position
     };
-    uint8_t data[CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE];
+    uint8_t data[CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE - sizeof(nth16_t)];
 } recv_ntb_t;
 
 // network endianess = LE!
