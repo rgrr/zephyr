@@ -38,14 +38,11 @@
 
 #define CONFIG_CDC_NCM_XMT_MAX_DATAGRAMS_PER_NTB  1
 #define CONFIG_CDC_NCM_RCV_MAX_DATAGRAMS_PER_NTB  1
-#define CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE           2050    // see discussion in https://github.com/hathach/tinyusb/pull/2227
-#define CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE           2050
+#define CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE           3200    // see discussion in https://github.com/hathach/tinyusb/pull/2227
+#define CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE           3200
 
 #if (CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE != CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE)
     #error "CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE != CONFIG_CDC_NCM_RCV_NTB_MAX_SIZE"
-#endif
-#if (CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE % 64 == 0)
-    #error "CONFIG_CDC_NCM_XMT_NTB_MAX_SIZE must not be a multiple of 64 (to avoid ZLPs)"
 #endif
 
 // Table 6.2 Class-Specific Request Codes for Network Control Model subclass

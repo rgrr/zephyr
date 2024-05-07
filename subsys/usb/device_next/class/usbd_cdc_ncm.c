@@ -720,10 +720,15 @@ static int usbd_cdc_ncm_control_to_device(struct usbd_class_data *const c_data,
  * USB control request handler to device
  */
 {
-    if (    setup->RequestType.recipient == USB_REQTYPE_RECIPIENT_INTERFACE
-        &&  setup->bRequest == SET_ETHERNET_PACKET_FILTER)
+    if (setup->bRequest == SET_ETHERNET_PACKET_FILTER)
     {
         LOG_INF("bRequest 0x%02x (SetPacketFilter) not implemented", setup->bRequest);
+        return 0;
+    }
+
+    if (setup->bRequest == NCM_SET_NTB_INPUT_SIZE)
+    {
+        LOG_INF("bRequest 0x%02x (SetNtbInputSize) not implemented", setup->bRequest);
         return 0;
     }
 
