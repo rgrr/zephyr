@@ -9,7 +9,8 @@
 /**
  * Specification
  * -------------
- * NCM spec can be obtained here: https://www.usb.org/document-library/network-control-model-devices-specification-v10-and-errata-and-adopters-agreement
+ * NCM spec can be obtained here:
+ * https://www.usb.org/document-library/network-control-model-devices-specification-v10-and-errata-and-adopters-agreement
  *
  * Small Glossary (from the spec)
  * --------------
@@ -333,7 +334,7 @@ static bool _cdc_ncm_frame_ok(struct cdc_ncm_eth_data *data, struct net_buf *con
 		return false;
 	}
 	if (sys_le32_to_cpu(nth16->dwSignature) != NTH16_SIGNATURE) {
-		LOG_ERR("  ill signature: 0x%08x", (unsigned)sys_le32_to_cpu(nth16->dwSignature));
+		LOG_ERR("  ill signature: 0x%08x", (unsigned int)sys_le32_to_cpu(nth16->dwSignature));
 		return false;
 	}
 	if (len < sizeof(struct nth16_t) + sizeof(struct ndp16_t)
@@ -350,7 +351,7 @@ static bool _cdc_ncm_frame_ok(struct cdc_ncm_eth_data *data, struct net_buf *con
 				CFG_CDC_NCM_RCV_NTB_MAX_SIZE);
 		return false;
 	}
-	if (    sys_le16_to_cpu(nth16->wNdpIndex) < sizeof(nth16)
+	if (sys_le16_to_cpu(nth16->wNdpIndex) < sizeof(nth16)
 	    ||  sys_le16_to_cpu(nth16->wNdpIndex)
 			> len - (sizeof(struct ndp16_t) + 2*sizeof(struct ndp16_datagram_t))) {
 		LOG_ERR("  ill position of first ndp: %d (%d)",
@@ -358,7 +359,7 @@ static bool _cdc_ncm_frame_ok(struct cdc_ncm_eth_data *data, struct net_buf *con
 		return false;
 	}
 
-	if (    sys_le16_to_cpu(nth16->wSequence) != 0
+	if (sys_le16_to_cpu(nth16->wSequence) != 0
 	    &&  sys_le16_to_cpu(nth16->wSequence) != data->rx_sequence + 1) {
 		LOG_ERR("problem with sequence: %d %d", data->rx_sequence,
 				sys_le16_to_cpu(nth16->wSequence));
@@ -379,7 +380,7 @@ static bool _cdc_ncm_frame_ok(struct cdc_ncm_eth_data *data, struct net_buf *con
 	if (sys_le32_to_cpu(ndp16->dwSignature) != NDP16_SIGNATURE_NCM0
 			&&  sys_le32_to_cpu(ndp16->dwSignature) != NDP16_SIGNATURE_NCM1) {
 		LOG_ERR("  ill signature: 0x%08x",
-				(unsigned)sys_le32_to_cpu(ndp16->dwSignature));
+				(unsigned int)sys_le32_to_cpu(ndp16->dwSignature));
 		return false;
 	}
 	if (sys_le16_to_cpu(ndp16->wNextNdpIndex) != 0) {
@@ -451,7 +452,7 @@ static int cdc_ncm_acl_out_cb(struct usbd_class_data *const c_data,
 
 	/* LOG_HEXDUMP_DBG(buf->data, buf->len, "ntb"); */
 
-	if ( !_cdc_ncm_frame_ok(data, buf)) {
+	if (!_cdc_ncm_frame_ok(data, buf)) {
 		LOG_ERR("ill frame received from host");
 		goto restart_out_transfer;
 	}
@@ -483,7 +484,7 @@ static int cdc_ncm_acl_out_cb(struct usbd_class_data *const c_data,
 		net_pkt_unref(pkt);
 	}
 
-	restart_out_transfer:
+restart_out_transfer:
 	net_buf_unref(buf);
 	atomic_clear_bit(&data->state, CDC_NCM_OUT_ENGAGED);
 
@@ -506,7 +507,7 @@ static int _usbd_cdc_ncm_send_notification(const struct device *dev,
 
 	LOG_DBG("");
 
-	if ( !atomic_test_bit(&data->state, CDC_NCM_CLASS_ENABLED)) {
+	if (!atomic_test_bit(&data->state, CDC_NCM_CLASS_ENABLED)) {
 		LOG_INF("USB configuration is not enabled");
 		return 0;
 	}
@@ -560,8 +561,7 @@ static void _usbd_cdc_ncm_notification_next_step(struct usbd_class_data *const c
 		ret = _usbd_cdc_ncm_send_notification(dev, &ncm_notify_speed_change,
 				sizeof(ncm_notify_speed_change));
 		LOG_DBG("cdc_ncm_send_notification_speed_change %d", ret);
-	}
-	else if (data->if_state == IF_STATE_SPEED_SENT) {
+	} else if (data->if_state == IF_STATE_SPEED_SENT) {
 		data->if_state = IF_STATE_DONE;
 
 		ncm_notify_connected.header.wIndex = sys_cpu_to_le16(cdc_ncm_get_ctrl_if(data));
@@ -769,16 +769,13 @@ static int usbd_cdc_ncm_control_to_host(struct usbd_class_data *const c_data,
 			LOG_DBG("    NCM_GET_NTB_PARAMETERS");
 			net_buf_add_mem(buf, &ntb_parameters, sizeof(ntb_parameters));
 			return 0;
-		}
-		else if (setup->bRequest == NCM_SET_ETHERNET_PACKET_FILTER) {
+		} else if (setup->bRequest == NCM_SET_ETHERNET_PACKET_FILTER) {
 			LOG_WRN("    NCM_SET_ETHERNET_PACKET_FILTER (not supported)");
 			return -ENOTSUP;
-		}
-		else if (setup->bRequest == NCM_GET_NTB_INPUT_SIZE) {
+		} else if (setup->bRequest == NCM_GET_NTB_INPUT_SIZE) {
 			LOG_ERR("    NCM_GET_NTB_INPUT_SIZE (not supported, but required)");
 			return -ENOTSUP;
-		}
-		else if (setup->bRequest == NCM_SET_NTB_INPUT_SIZE) {
+		} else if (setup->bRequest == NCM_SET_NTB_INPUT_SIZE) {
 			LOG_ERR("    NCM_SET_NTB_INPUT_SIZE (not supported, but required)");
 			return -ENOTSUP;
 		}
@@ -814,8 +811,7 @@ static int usbd_cdc_ncm_init(struct usbd_class_data *const c_data)
 
 	if (usbd_add_descriptor(uds_ctx, data->mac_desc_data)) {
 		LOG_ERR("Failed to add iMACAddress string descriptor");
-	}
-	else {
+	} else {
 		desc->if0_ncm.iMACAddress = data->mac_desc_data->idx;
 	}
 
@@ -876,7 +872,7 @@ static int cdc_ncm_send(const struct device *dev, struct net_pkt *const pkt)
 		return -ENOMEM;
 	}
 
-	if (    !atomic_test_bit(&data->state, CDC_NCM_CLASS_ENABLED)
+	if (!atomic_test_bit(&data->state, CDC_NCM_CLASS_ENABLED)
 	    ||  !atomic_test_bit(&data->state, CDC_NCM_IFACE_UP)) {
 		LOG_INF("Configuration is not enabled or interface not ready %ld", data->state);
 		return -EACCES;
@@ -905,7 +901,7 @@ static int cdc_ncm_send(const struct device *dev, struct net_pkt *const pkt)
 
 	ntb->ndp_datagram[0].wDatagramIndex  =
 			sys_cpu_to_le16(sys_le16_to_cpu(ntb->nth.wHeaderLength)
-				        + sys_le16_to_cpu(ntb->ndp.wLength));
+					+ sys_le16_to_cpu(ntb->ndp.wLength));
 	ntb->ndp_datagram[0].wDatagramLength = sys_cpu_to_le16(pkt_len);
 	ntb->ndp_datagram[1].wDatagramIndex  = 0;
 	ntb->ndp_datagram[1].wDatagramLength = 0;
@@ -914,8 +910,10 @@ static int cdc_ncm_send(const struct device *dev, struct net_pkt *const pkt)
 			sys_cpu_to_le16(sys_le16_to_cpu(ntb->ndp_datagram[0].wDatagramIndex)
 					+ pkt_len);
 
-	/*    LOG_WRN("%p %d %d %d", ntb, ntb->ndp_datagram[0].wDatagramIndex,
-	 *    pkt_len, sys_le16_to_cpu(ntb->nth.wBlockLength)); */
+#if 0
+	LOG_WRN("%p %d %d %d", ntb, ntb->ndp_datagram[0].wDatagramIndex,
+	pkt_len, sys_le16_to_cpu(ntb->nth.wBlockLength));
+#endif
 
 	if (net_pkt_read(pkt,
 		ntb->data + sys_le16_to_cpu(ntb->ndp_datagram[0].wDatagramIndex), pkt_len)) {
@@ -1153,7 +1151,7 @@ static const struct ethernet_api cdc_ncm_eth_api = {
 			.bmAttributes = USB_EP_TYPE_INTERRUPT,                         \
 			.wMaxPacketSize = sys_cpu_to_le16(CDC_NCM_EP_MPS_INT),         \
 			.bInterval = CDC_NCM_HS_INT_EP_INTERVAL,                       \
-        },                                                                             \
+	},                                                                             \
 	\
 	/* Interface descriptor, alternate setting 0                                */ \
 	/* CDC Data Interface                                                       */ \
