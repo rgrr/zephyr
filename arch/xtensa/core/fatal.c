@@ -84,10 +84,10 @@ char *xtensa_exccause(unsigned int cause_code)
 #endif
 }
 
-void xtensa_fatal_error(unsigned int reason, const z_arch_esf_t *esf)
+void xtensa_fatal_error(unsigned int reason, const struct arch_esf *esf)
 {
 #ifdef CONFIG_EXCEPTION_DEBUG
-	if (esf) {
+	if (esf != NULL) {
 		/* Don't want to get elbowed by xtensa_switch
 		 * in between printing registers and dumping them;
 		 * corrupts backtrace

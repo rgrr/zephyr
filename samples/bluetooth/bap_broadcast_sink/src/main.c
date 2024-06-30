@@ -38,7 +38,7 @@ BUILD_ASSERT(IS_ENABLED(CONFIG_SCAN_SELF) || IS_ENABLED(CONFIG_SCAN_OFFLOAD),
 #endif /* CONFIG_SCAN_SELF */
 
 #define INVALID_BROADCAST_ID        (BT_AUDIO_BROADCAST_ID_MAX + 1)
-#define PA_SYNC_INTERVAL_TO_TIMEOUT_RATIO 20 /* Set the timeout relative to interval */
+#define PA_SYNC_INTERVAL_TO_TIMEOUT_RATIO 5 /* Set the timeout relative to interval */
 #define PA_SYNC_SKIP                5
 #define NAME_LEN                    sizeof(CONFIG_TARGET_BROADCAST_NAME) + 1
 #define BROADCAST_DATA_ELEMENT_SIZE sizeof(int16_t)
@@ -345,7 +345,7 @@ static int lc3_enable(struct broadcast_sink_stream *sink_stream)
 	}
 
 	ret = bt_audio_codec_cfg_get_chan_allocation(sink_stream->stream.codec_cfg,
-						     &sink_stream->chan_allocation);
+						     &sink_stream->chan_allocation, true);
 	if (ret != 0) {
 		printk("Error: Channel allocation not set, invalid configuration for LC3");
 		return ret;
@@ -622,18 +622,11 @@ static bool find_valid_bis_cb(const struct bt_bap_base_subgroup_bis *bis,
 		return true;
 	}
 
-	err = bt_audio_codec_cfg_get_chan_allocation(&codec_cfg, &chan_allocation);
+	err = bt_audio_codec_cfg_get_chan_allocation(&codec_cfg, &chan_allocation, true);
 	if (err != 0) {
 		printk("Could not find channel allocation for BIS: %d\n", err);
 
-		/* Absence of channel allocation is implicitly mono as per the BAP spec */
-		if (CONFIG_TARGET_BROADCAST_CHANNEL == BT_AUDIO_LOCATION_MONO_AUDIO) {
-			data->bis[0].index = bis->index;
-			data->bis[0].chan_allocation = chan_allocation;
-			data->cnt = 1;
-
-			return false;
-		} else if (err == -ENODATA && strlen(CONFIG_TARGET_BROADCAST_NAME) > 0U) {
+		if (err == -ENODATA && strlen(CONFIG_TARGET_BROADCAST_NAME) > 0U) {
 			/* Accept no channel allocation data available
 			 * if TARGET_BROADCAST_NAME defined. Use current index.
 			 */
@@ -742,7 +735,7 @@ static bool find_valid_bis_in_subgroup_cb(const struct bt_bap_base_subgroup *sub
 		return true;
 	}
 
-	err = bt_audio_codec_cfg_get_chan_allocation(&codec_cfg, &chan_allocation);
+	err = bt_audio_codec_cfg_get_chan_allocation(&codec_cfg, &chan_allocation, false);
 	if (err != 0) {
 		printk("Could not find subgroup channel allocation: %d - Looking in the BISes\n",
 		       err);
@@ -1248,10 +1241,32 @@ static void bap_pa_sync_terminated_cb(struct bt_le_per_adv_sync *sync,
 				      const struct bt_le_per_adv_sync_term_info *info)
 {
 	if (sync == pa_sync) {
-		printk("PA sync %p lost with reason %u\n", sync, info->reason);
+		printk("PA sync %p lost with reason 0x%02X\n", sync, info->reason);
 		pa_sync = NULL;
 
 		k_sem_give(&sem_pa_sync_lost);
+
+		if (info->reason != BT_HCI_ERR_LOCALHOST_TERM_CONN && req_recv_state != NULL) {
+			int err;
+
+			if (k_sem_count_get(&sem_stream_connected) > 0) {
+				err = bt_bap_broadcast_sink_stop(broadcast_sink);
+				if (err != 0) {
+					printk("Failed to stop Broadcast Sink: %d\n", err);
+
+					return;
+				}
+			}
+
+			err = bt_bap_scan_delegator_rem_src(req_recv_state->src_id);
+			if (err != 0) {
+				printk("Failed to remove source: %d\n", err);
+
+				return;
+			}
+
+			k_sem_give(&sem_broadcast_sink_stopped);
+		}
 	}
 }
 
@@ -1634,7 +1649,7 @@ wait_for_pa_sync:
 		printk("Waiting for PA disconnected\n");
 		k_sem_take(&sem_pa_sync_lost, K_FOREVER);
 
-		printk("Wainting for sink to stop\n");
+		printk("Waiting for sink to stop\n");
 		err = k_sem_take(&sem_broadcast_sink_stopped, SEM_TIMEOUT);
 		if (err != 0) {
 			printk("sem_broadcast_sink_stopped timed out, resetting\n");

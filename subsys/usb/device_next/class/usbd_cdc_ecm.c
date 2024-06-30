@@ -63,7 +63,7 @@ struct usbd_cdc_ecm_desc {
 	struct usb_if_descriptor if0;
 	struct cdc_header_descriptor if0_header;
 	struct cdc_union_descriptor if0_union;
-	struct cdc_ecm_descriptor if0_ecm;
+	struct cdc_eth_functional_descriptor if0_ecm;
 	struct usb_ep_descriptor if0_int_ep;
 	struct usb_ep_descriptor if0_hs_int_ep;
 
@@ -102,7 +102,7 @@ static uint8_t cdc_ecm_get_ctrl_if(struct cdc_ecm_eth_data *const data)
 
 static uint8_t cdc_ecm_get_int_in(struct usbd_class_data *const c_data)
 {
-	struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
 	const struct device *dev = usbd_class_get_private(c_data);
 	struct cdc_ecm_eth_data *data = dev->data;
 	struct usbd_cdc_ecm_desc *desc = data->desc;
@@ -116,7 +116,7 @@ static uint8_t cdc_ecm_get_int_in(struct usbd_class_data *const c_data)
 
 static uint8_t cdc_ecm_get_bulk_in(struct usbd_class_data *const c_data)
 {
-	struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
 	const struct device *dev = usbd_class_get_private(c_data);
 	struct cdc_ecm_eth_data *data = dev->data;
 	struct usbd_cdc_ecm_desc *desc = data->desc;
@@ -130,7 +130,7 @@ static uint8_t cdc_ecm_get_bulk_in(struct usbd_class_data *const c_data)
 
 static uint16_t cdc_ecm_get_bulk_in_mps(struct usbd_class_data *const c_data)
 {
-	struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
 
 	if (usbd_bus_speed(uds_ctx) == USBD_SPEED_HS) {
 		return 512U;
@@ -141,7 +141,7 @@ static uint16_t cdc_ecm_get_bulk_in_mps(struct usbd_class_data *const c_data)
 
 static uint8_t cdc_ecm_get_bulk_out(struct usbd_class_data *const c_data)
 {
-	struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
 	const struct device *dev = usbd_class_get_private(c_data);
 	struct cdc_ecm_eth_data *data = dev->data;
 	struct usbd_cdc_ecm_desc *desc = data->desc;
@@ -283,7 +283,7 @@ restart_out_transfer:
 static int usbd_cdc_ecm_request(struct usbd_class_data *const c_data,
 				struct net_buf *buf, int err)
 {
-	struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
 	const struct device *dev = usbd_class_get_private(c_data);
 	struct cdc_ecm_eth_data *data = dev->data;
 	struct udc_buf_info *bi;
@@ -442,7 +442,7 @@ static int usbd_cdc_ecm_ctd(struct usbd_class_data *const c_data,
 
 static int usbd_cdc_ecm_init(struct usbd_class_data *const c_data)
 {
-	struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
 	const struct device *dev = usbd_class_get_private(c_data);
 	struct cdc_ecm_eth_data *const data = dev->data;
 	struct usbd_cdc_ecm_desc *desc = data->desc;
@@ -681,7 +681,7 @@ static struct usbd_cdc_ecm_desc cdc_ecm_desc_##n = {				\
 	},									\
 										\
 	.if0_ecm = {								\
-		.bFunctionLength = sizeof(struct cdc_ecm_descriptor),		\
+		.bFunctionLength = sizeof(struct cdc_eth_functional_descriptor),		\
 		.bDescriptorType = USB_DESC_CS_INTERFACE,			\
 		.bDescriptorSubtype = ETHERNET_FUNC_DESC,			\
 		.iMACAddress = 0,						\

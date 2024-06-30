@@ -267,7 +267,7 @@ ZTEST(socket_packet, test_raw_packet_sockets)
 	addrlen = sizeof(src);
 	errno = 0;
 
-	/* The recvfrom reads the the whole received packet - including its
+	/* The recvfrom reads the whole received packet - including its
 	 * IP (20B) and UDP (8) headers. After those we can expect payload,
 	 * which have been sent.
 	 */
@@ -328,7 +328,7 @@ ZTEST(socket_packet, test_packet_sockets_dgram)
 
 	memset(&dst, 0, sizeof(dst));
 	dst.sll_family = AF_PACKET;
-	dst.sll_protocol = htons(ETH_P_IP);
+	dst.sll_protocol = htons(ETH_P_TSN);
 	memcpy(dst.sll_addr, lladdr1, sizeof(lladdr1));
 
 	ret = zsock_sendto(sock2, data_to_send, sizeof(data_to_send), 0,

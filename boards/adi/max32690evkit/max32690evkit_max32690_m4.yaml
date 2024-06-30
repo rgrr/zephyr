@@ -1,5 +1,6 @@
 identifier: max32690evkit/max32690/m4
 name: max32690evkit m4
+vendor: adi
 type: mcu
 arch: arm
 toolchain:
@@ -9,5 +10,7 @@ toolchain:
 supported:
   - gpio
   - serial
+  - spi
+  - i2c
 ram: 1024
 flash: 3072
