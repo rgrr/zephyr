@@ -196,7 +196,7 @@ static uint8_t cdc_ncm_get_ctrl_if(struct cdc_ncm_eth_data *const data)
 
 static uint8_t cdc_ncm_get_int_in(struct usbd_class_data *const c_data)
 {
-	struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
 	const struct device *dev = usbd_class_get_private(c_data);
 	struct cdc_ncm_eth_data *data = dev->data;
 	struct usbd_cdc_ncm_desc *desc = data->desc;
@@ -212,7 +212,7 @@ static uint8_t cdc_ncm_get_int_in(struct usbd_class_data *const c_data)
 
 static uint8_t cdc_ncm_get_bulk_in(struct usbd_class_data *const c_data)
 {
-	struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
 	const struct device *dev = usbd_class_get_private(c_data);
 	struct cdc_ncm_eth_data *data = dev->data;
 	struct usbd_cdc_ncm_desc *desc = data->desc;
@@ -228,7 +228,7 @@ static uint8_t cdc_ncm_get_bulk_in(struct usbd_class_data *const c_data)
 
 static uint16_t cdc_ncm_get_bulk_in_mps(struct usbd_class_data *const c_data)
 {
-	struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
 
 	if (usbd_bus_speed(uds_ctx) == USBD_SPEED_HS) {
 		return 512U;
@@ -241,7 +241,7 @@ static uint16_t cdc_ncm_get_bulk_in_mps(struct usbd_class_data *const c_data)
 
 static uint8_t cdc_ncm_get_bulk_out(struct usbd_class_data *const c_data)
 {
-	struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
 	const struct device *dev = usbd_class_get_private(c_data);
 	struct cdc_ncm_eth_data *data = dev->data;
 	struct usbd_cdc_ncm_desc *desc = data->desc;
@@ -541,7 +541,7 @@ static void _usbd_cdc_ncm_notification_next_step(struct usbd_class_data *const c
  * Send \a ConnectionSpeedChange and then \a NetworkConnection to the host.
  */
 {
-	struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
 	const struct device *dev = usbd_class_get_private(c_data);
 	struct cdc_ncm_eth_data *data = dev->data;
 	int ret;
@@ -578,7 +578,7 @@ static int usbd_cdc_ncm_request(struct usbd_class_data *const c_data,
  * Endpoint request completion event handler: handle NCM request from host.
  */
 {
-	struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
 	const struct device *dev = usbd_class_get_private(c_data);
 	struct cdc_ncm_eth_data *data = dev->data;
 	struct udc_buf_info *bi;
@@ -794,7 +794,7 @@ static int usbd_cdc_ncm_init(struct usbd_class_data *const c_data)
  * Initialization of the class implementation
  */
 {
-	struct usbd_contex *uds_ctx = usbd_class_get_ctx(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
 	const struct device *dev = usbd_class_get_private(c_data);
 	struct cdc_ncm_eth_data *const data = dev->data;
 	struct usbd_cdc_ncm_desc *desc = data->desc;
